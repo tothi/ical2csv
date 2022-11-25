@@ -4,6 +4,7 @@ import sys
 import os.path
 from icalendar import Calendar
 import csv
+from pytz import timezone
 
 filename = sys.argv[1]
 # TODO: use regex to get file extension (chars after last period), in case it's not exactly 3 chars.
@@ -27,20 +28,25 @@ events = []
 
 
 def open_cal():
+    global tz
     if os.path.isfile(filename):
         if file_extension == 'ics':
             print("Extracting events from file:", filename, "\n")
             f = open(sys.argv[1], 'rb')
             gcal = Calendar.from_ical(f.read())
 
+            tz = timezone(gcal.get('X-WR-TIMEZONE'))
+            
             for component in gcal.walk():
                 event = CalendarEvent("event")
                 if component.get('TRANSP') == 'TRANSPARENT': continue #skip event that have not been accepted
                 if component.get('SUMMARY') == None: continue #skip blank items
                 event.summary = component.get('SUMMARY')
                 event.uid = component.get('UID')
-                if component.get('DESCRIPTION') == None: continue #skip blank items
-                event.description = component.get('DESCRIPTION')
+                if component.get('DESCRIPTION') == None:
+                    event.description = "NONE"
+                else:
+                    event.description = component.get('DESCRIPTION')
                 event.location = component.get('LOCATION')
                 if hasattr(component.get('dtstart'), 'dt'):
                     event.start = component.get('dtstart').dt
@@ -61,14 +67,14 @@ def open_cal():
         exit(0)
 
 
-def csv_write(icsfile):
+def csv_write(icsfile, tz):
     csvfile = icsfile[:-3] + "csv"
     try:
         with open(csvfile, 'w') as myfile:
             wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
             wr.writerow(headers)
             for event in sortedevents:
-                values = (event.summary.encode('utf8').decode(), event.uid, event.description.encode('utf8').decode(), event.location, event.start, event.end, event.url)
+                values = (event.summary.encode('utf8').decode(), event.uid, event.description.encode('utf8').decode(), event.location, event.start.astimezone(tz), event.end.astimezone(tz), event.url)
                 wr.writerow(values)
             print("Wrote to ", csvfile, "\n")
     except IOError:
@@ -88,5 +94,5 @@ def debug_event(class_name):
 
 open_cal()
 sortedevents=sorted(events, key=lambda obj: obj.start) # Needed to sort events. They are not fully chronological in a Google Calendard export ...
-csv_write(filename)
+csv_write(filename, tz)
 #debug_event(event)
